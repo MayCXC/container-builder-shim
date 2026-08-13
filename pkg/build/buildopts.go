@@ -33,6 +33,7 @@ import (
 
 	"github.com/apple/container-builder-shim/pkg/build/utils"
 	"github.com/apple/container-builder-shim/pkg/content"
+	"github.com/apple/container-builder-shim/pkg/exporter"
 	"github.com/apple/container-builder-shim/pkg/fssync"
 	"github.com/apple/container-builder-shim/pkg/resolver"
 	"github.com/apple/container-builder-shim/pkg/stdio"
@@ -108,6 +109,7 @@ type BOpts struct {
 	Resolver     *resolver.ResolverProxy
 	FSSync       *fssync.FSSyncProxy
 	Stdio        *stdio.StdioProxy
+	Exporter     *exporter.ExporterProxy
 
 	basePath string
 }
@@ -387,6 +389,7 @@ func NewBuildOpts(ctx context.Context, basePath string, contextMap map[string][]
 		Resolver:       resolver.NewResolverProxy(),
 		ProgressWriter: pw,
 		Stdio:          stdioProxy,
+		Exporter:       exporter.NewExporterProxy(ctx),
 		Target:         target,
 		Labels:         labels,
 		BuildArgs:      buildArgs,

@@ -79,6 +79,7 @@ func (b *BuilderProxy) PerformBuild(s api.Builder_PerformBuildServer) (err error
 		opts.FSSync,
 		opts.Resolver,
 		opts.Stdio,
+		opts.Exporter,
 	}
 
 	var pipeline *stream.StreamPipeline
