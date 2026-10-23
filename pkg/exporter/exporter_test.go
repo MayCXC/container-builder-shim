@@ -97,6 +97,42 @@ func TestExporterProxy_Write_EmptyMarksComplete(t *testing.T) {
 	}
 }
 
+func TestExporterProxy_Respond_SendsExporterResponse(t *testing.T) {
+	ctx := context.Background()
+	proxy := NewExporterProxy(ctx)
+
+	response := map[string]string{
+		"containerimage.digest":        "sha256:417ad241ef42ecdd12b03e5508aaa6c2a42c93bc4c042695f1c93b81b565068b",
+		"containerimage.config.digest": "sha256:98776dc52a9508b86e6d723701ba2271afb1ee05a97725589bf54bd80ef2389f",
+	}
+	if err := proxy.Respond(response); err != nil {
+		t.Fatalf("Respond returned error: %v", err)
+	}
+
+	bt := captureExporter.payload.GetBuildTransfer()
+	if bt == nil {
+		t.Fatalf("expected BuildTransfer packet, got nil")
+	}
+	if captureExporter.payload.BuildId != bt.Id || captureExporter.id != bt.Id {
+		t.Fatalf("the reply is matched by the transfer's id: build id %q, request id %q, transfer id %q",
+			captureExporter.payload.BuildId, captureExporter.id, bt.Id)
+	}
+	if bt.Direction != api.TransferDirection_OUTOF {
+		t.Fatalf("expected direction OUTOF, got %v", bt.Direction)
+	}
+	if !bt.Complete {
+		t.Fatalf("the response is one packet, marked complete")
+	}
+	if bt.Metadata["stage"] != proxy.String() || bt.Metadata["method"] != "Respond" {
+		t.Fatalf("expected stage %q and method Respond, got %q and %q", proxy.String(), bt.Metadata["stage"], bt.Metadata["method"])
+	}
+	for key, value := range response {
+		if bt.Metadata[key] != value {
+			t.Fatalf("metadata %q: want %q, got %q", key, value, bt.Metadata[key])
+		}
+	}
+}
+
 func TestExporterProxy_Filter_MatchingStage(t *testing.T) {
 	ctx := context.Background()
 	proxy := NewExporterProxy(ctx)

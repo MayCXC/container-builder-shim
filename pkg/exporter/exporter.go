@@ -136,3 +136,51 @@ func (e *ExporterProxy) Write(p []byte) (written int, err error) {
 
 	return len(p), nil
 }
+
+/*
+Respond hands the caller the solve's exporter response, the map a BuildKit
+solve returns its client (containerimage.digest among it), and returns once
+the caller has acknowledged it, so the response arrives before the build's
+stream closes, wherever the builder runs.
+https://github.com/moby/buildkit/blob/master/exporter/containerimage/exptypes/keys.go
+
+Request Format:
+
+	BuildTransfer {
+	    ID: $uuid,
+	    Direction: OUTOF,
+	    Metadata: {
+	        "os": "linux",
+	        "stage":  "exporter",
+	        "method": "Respond",
+	        $key: $value, (each entry of the exporter response)
+	    },
+	    Complete: true,
+	}
+*/
+func (e *ExporterProxy) Respond(response map[string]string) error {
+	cancellableCtx, cancel := context.WithCancel(e.ctx)
+	defer cancel()
+
+	metadata := make(map[string]string, len(response)+3)
+	for key, value := range response {
+		metadata[key] = value
+	}
+	metadata["os"] = "linux"
+	metadata["stage"] = "exporter"
+	metadata["method"] = "Respond"
+
+	id := uuid.NewString()
+	_, err := e.Request(cancellableCtx, &api.ServerStream{
+		BuildId: id,
+		PacketType: &api.ServerStream_BuildTransfer{
+			BuildTransfer: &api.BuildTransfer{
+				Id:        id,
+				Direction: api.TransferDirection_OUTOF,
+				Metadata:  metadata,
+				Complete:  true,
+			},
+		},
+	}, id, stream.FilterByBuildID)
+	return err
+}
