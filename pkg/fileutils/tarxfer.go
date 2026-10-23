@@ -124,10 +124,12 @@ func (r *Receiver) Receive(ctx context.Context, dockerfile []byte, dockerignore 
 		}
 	}
 
-	if len(dockerignore) > 0 {
-		if err := stageDockerfiles(ctx, cacheDir, dockerfile, dockerignore); err != nil {
-			return "", err
-		}
+	// Stage unconditionally: the frontend's entrypoint read resolves the
+	// filename attr against this staging path, and it must succeed for every
+	// build (source-mapped errors and lint findings hang off it), not only
+	// for builds that carry a dockerignore.
+	if err := stageDockerfiles(ctx, cacheDir, dockerfile, dockerignore); err != nil {
+		return "", err
 	}
 
 	return checksum, filepath.Walk(cacheDir, func(p string, info os.FileInfo, _ error) error {
@@ -365,21 +367,8 @@ func stageDockerfiles(ctx context.Context, cacheDir string, dockerfile []byte, d
 		return err
 	}
 
-	dockerfilePath := filepath.Join(staging, "Dockerfile")
-	f, err := os.OpenFile(dockerfilePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
+	if err := os.WriteFile(filepath.Join(staging, "Dockerfile"), dockerfile, 0o644); err != nil {
 		return err
 	}
-	f.Write(dockerfile)
-	f.Close()
-
-	dockerignorePath := filepath.Join(staging, "Dockerfile.dockerignore")
-	f, err = os.OpenFile(dockerignorePath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
-	if err != nil {
-		return err
-	}
-	f.Write(dockerignore)
-	f.Close()
-
-	return nil
+	return os.WriteFile(filepath.Join(staging, "Dockerfile.dockerignore"), dockerignore, 0o644)
 }

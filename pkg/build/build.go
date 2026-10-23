@@ -177,9 +177,7 @@ func Build(ctx context.Context, opts *BOpts) error {
 		KeyContentStoreName: opts.ContentStore,
 	}
 
-	if len(opts.Dockerignore) > 0 {
-		solveOpt.FrontendAttrs["filename"] = filepath.Join(DockerfileStaging, "Dockerfile")
-	}
+	solveOpt.FrontendAttrs["filename"] = filepath.Join(DockerfileStaging, "Dockerfile")
 
 	if opts.NoCache {
 		solveOpt.FrontendAttrs["no-cache"] = ""
@@ -205,6 +203,50 @@ func Build(ctx context.Context, opts *BOpts) error {
 	for k, v := range opts.Labels {
 		solveOpt.FrontendAttrs["label:"+k] = v
 	}
+
+	// Sandbox settings the dockerfile frontend applies to every RUN. The value
+	// shapes are the frontend's: add-hosts and ulimit are CSV records, shm-size
+	// is a byte count, force-network-mode is one of none/host/sandbox, and the
+	// hostname has a build-arg spelling the frontend folds into the same field.
+	// https://github.com/moby/buildkit/blob/v0.29.0/frontend/dockerui/attr.go
+	if len(opts.AddHosts) > 0 {
+		solveOpt.FrontendAttrs["add-hosts"] = strings.Join(opts.AddHosts, ",")
+	}
+	if opts.Hostname != "" {
+		solveOpt.FrontendAttrs["hostname"] = opts.Hostname
+	}
+	if opts.ShmSize != "" {
+		solveOpt.FrontendAttrs["shm-size"] = opts.ShmSize
+	}
+	if len(opts.Ulimits) > 0 {
+		solveOpt.FrontendAttrs["ulimit"] = strings.Join(opts.Ulimits, ",")
+	}
+	if opts.CgroupParent != "" {
+		solveOpt.FrontendAttrs["cgroup-parent"] = opts.CgroupParent
+	}
+	if opts.Network != "" {
+		solveOpt.FrontendAttrs["force-network-mode"] = opts.Network
+	}
+	for name, ref := range opts.BuildContexts {
+		switch strings.SplitN(ref, ":", 2)[0] {
+		case "docker-image", "git", "http", "https", "ssh", "local", "input":
+			solveOpt.FrontendAttrs["context:"+name] = ref
+		case "oci-layout":
+			// oci-layout requires custom handling as it needs to load the layout data from the client
+			// not setting solveOpt.FrontendAttrs["context:"+name] here for the frontend can handle it because namedcontext will resolve
+			solveOpt.OCIStores[name] = opts.ContentStore
+		default:
+			// The dockerfile frontend accepts a bare git@host:path SSH ref
+			// and rewrites it to the git scheme itself; everything else
+			// bare is a local directory the host serves under this name.
+			if strings.HasPrefix(ref, "git@") {
+				solveOpt.FrontendAttrs["context:"+name] = ref
+				continue
+			}
+			solveOpt.FrontendAttrs["context:"+name] = "local:" + name
+		}
+	}
+
 	solveOpt.Frontend = "dockerfile.v1"
 
 	if len(opts.SSH) > 0 {

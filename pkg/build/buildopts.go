@@ -54,8 +54,8 @@ const (
 	KeyProgress = "progress"
 	// When present, disables layer caching.
 	KeyNoCache = "no-cache"
-	// Build context directory path.
-	KeyContext = "context"
+	// Build base context directory path.
+	KeyContextDirectory = "context"
 	// Dockerfile stage to build up to.
 	KeyTarget = "target"
 	// Key=value metadata labels to apply to the image.
@@ -74,6 +74,20 @@ const (
 	KeyOutput = "outputs"
 	// Unique build identifier.
 	KeyBuildID = "build-id"
+	// Additional Build contexts (--build-context).
+	KeyBuildContext = "build-context"
+	// Extra host-to-IP entries resolvable inside every RUN.
+	KeyAddHost = "add-host"
+	// Hostname the build sandbox reports.
+	KeyHostname = "hostname"
+	// Size of /dev/shm in the build sandbox, in bytes.
+	KeyShmSize = "shm-size"
+	// Resource limits applied to the build sandbox.
+	KeyUlimit = "ulimit"
+	// cgroup the build sandbox is placed under.
+	KeyCgroupParent = "cgroup-parent"
+	// Network mode for every RUN: none, host or sandbox.
+	KeyNetwork = "network"
 )
 
 const (
@@ -104,6 +118,13 @@ type BOpts struct {
 	Outputs        []string
 	Labels         map[string]string
 	ProgressWriter progresswriter.Writer
+	BuildContexts  map[string]string
+	AddHosts       []string
+	Hostname       string
+	ShmSize        string
+	Ulimits        []string
+	CgroupParent   string
+	Network        string
 
 	ContentStore *content.ContentStoreProxy
 	Resolver     *resolver.ResolverProxy
@@ -121,6 +142,11 @@ func NewBuildOpts(ctx context.Context, basePath string, contextMap map[string][]
 			return "", false
 		}
 		return values[0], true
+	}
+
+	firstOrEmpty := func(key string) string {
+		value, _ := first(key)
+		return value
 	}
 
 	buildID, ok := first(KeyBuildID)
@@ -171,7 +197,7 @@ func NewBuildOpts(ctx context.Context, basePath string, contextMap map[string][]
 	}
 
 	ctxDir := "."
-	if c, ok := first(KeyContext); ok {
+	if c, ok := first(KeyContextDirectory); ok {
 		ctxDir = c
 	}
 
@@ -284,6 +310,7 @@ func NewBuildOpts(ctx context.Context, basePath string, contextMap map[string][]
 
 	labels := mapExtract(KeyLabels)
 	buildArgs := mapExtract(KeyBuildArgs)
+	buildContexts := mapExtract(KeyBuildContext)
 	secrets, err := mapExtractB64(KeySecrets)
 	if err != nil {
 		return nil, err
@@ -365,7 +392,7 @@ func NewBuildOpts(ctx context.Context, basePath string, contextMap map[string][]
 		}
 	}
 
-	fssyncProxy, err := fssync.NewFSSyncProxy(".", basePath, addedGlobs, dockerfileBytes, dockerignoreBytes)
+	fssyncProxy, err := fssync.NewFSSyncProxy(ctxDir, basePath, addedGlobs, dockerfileBytes, dockerignoreBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -393,12 +420,19 @@ func NewBuildOpts(ctx context.Context, basePath string, contextMap map[string][]
 		Target:         target,
 		Labels:         labels,
 		BuildArgs:      buildArgs,
+		AddHosts:       contextMap[KeyAddHost],
+		Hostname:       firstOrEmpty(KeyHostname),
+		ShmSize:        firstOrEmpty(KeyShmSize),
+		Ulimits:        contextMap[KeyUlimit],
+		CgroupParent:   firstOrEmpty(KeyCgroupParent),
+		Network:        firstOrEmpty(KeyNetwork),
 		Secrets:        secrets,
 		SSH:            ssh,
 		CacheIn:        cacheIn,
 		CacheOut:       cacheOut,
 		Outputs:        outputs,
 		basePath:       filepath.Join(basePath, buildID),
+		BuildContexts:  buildContexts,
 	}
 
 	return bopts, nil
